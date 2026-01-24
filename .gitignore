@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+web/dist/
+
+# v86 source (cloned locally for tools)
+.v86-src/
+
+# Alpine guest build artifacts
+alpine-guest/rootfs.tar
+alpine-guest/rootfs.tar.gz
+alpine-guest/vmlinuz-virt
+alpine-guest/initramfs-virt
+alpine-guest/extract/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+
+# TypeScript
+*.tsbuildinfo

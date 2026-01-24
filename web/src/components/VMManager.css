@@ -1,0 +1,47 @@
+.vm-manager {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #4ecca3;
+  color: #0f0f1a;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #3db892;
+}
+
+.btn-secondary {
+  background: #2a2a4e;
+  color: #eee;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #3a3a5e;
+}
+
+.btn-danger {
+  background: #e74c3c;
+  color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #c0392b;
+}

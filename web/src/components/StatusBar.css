@@ -1,0 +1,26 @@
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 8px 20px;
+  background: #1a1a2e;
+  border-top: 1px solid #2a2a4e;
+  font-size: 12px;
+  color: #888;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-right {
+  margin-left: auto;
+}
