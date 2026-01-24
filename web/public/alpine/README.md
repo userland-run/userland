@@ -18,9 +18,9 @@ cd alpine-guest
 Option 2: Use v86's Docker tooling
 
 ```bash
-git clone https://github.com/copy/v86.git
+git clone https://github.com/userland-run/v86.git
 cd v86/tools/docker/alpine
 docker-compose up
 ```
 
-See https://github.com/copy/v86 for detailed instructions.
+See https://github.com/userland-run/v86 for detailed instructions.

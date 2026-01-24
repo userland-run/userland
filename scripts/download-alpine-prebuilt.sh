@@ -43,7 +43,7 @@ The v86 emulator expects:
 - alpine-fs.json: Filesystem metadata
 - alpine-rootfs-flat/: Directory with SHA256-named files
 
-See https://github.com/copy/v86 for more details.
+See https://github.com/userland-run/v86 for more details.
 EOF
 
 echo "==> Setup instructions created"

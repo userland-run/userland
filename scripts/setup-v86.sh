@@ -15,7 +15,7 @@ mkdir -p "$V86_DIR" "$ALPINE_DIR"
 V86_REPO="$ROOT_DIR/.v86-src"
 if [ ! -d "$V86_REPO" ]; then
     echo "==> Cloning v86 repository..."
-    git clone --depth 1 https://github.com/copy/v86.git "$V86_REPO"
+    git clone --depth 1 https://github.com/userland-run/v86.git "$V86_REPO"
 fi
 
 # Check for pre-built releases

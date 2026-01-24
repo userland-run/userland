@@ -17,7 +17,7 @@ Run the setup script to download and build v86:
 
 Or manually:
 
-1. Clone v86: `git clone https://github.com/copy/v86.git`
+1. Clone v86: `git clone https://github.com/userland-run/v86.git`
 2. Build: `cd v86 && make build/libv86.js`
 3. Copy files:
    - `v86/build/libv86.js` → here
