@@ -11,11 +11,11 @@ echo "==> Setting up v86 for VM Workbench"
 # Create directories
 mkdir -p "$V86_DIR" "$ALPINE_DIR"
 
-# Clone v86 if needed
-V86_REPO="$ROOT_DIR/.v86-src"
-if [ ! -d "$V86_REPO" ]; then
-    echo "==> Cloning v86 repository..."
-    git clone --depth 1 https://github.com/userland-run/v86.git "$V86_REPO"
+# v86 is a git submodule at v86/
+V86_REPO="$ROOT_DIR/v86"
+if [ ! -d "$V86_REPO/.git" ] && [ ! -f "$V86_REPO/.git" ]; then
+    echo "==> Initializing v86 submodule..."
+    git -C "$ROOT_DIR" submodule update --init --recursive
 fi
 
 # Check for pre-built releases
