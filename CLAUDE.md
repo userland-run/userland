@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Autonomous Operation
+
+Work autonomously on tasks without asking for permission at each step. When given a task:
+- Execute the full task end-to-end
+- Run tests and type-checks after making changes
+- Fix issues you discover along the way
+- Use subagents for parallel work (e.g., researching while implementing)
+- Only ask questions when genuinely blocked or facing ambiguous requirements
+
+### Decision Making
+- Prefer simple, working solutions over complex architectures
+- Follow existing patterns in the codebase
+- When unsure between approaches, pick one and proceed (can iterate later)
+- Use `ultrathink` for complex architectural decisions
+
 ## Project Overview
 
 **Userland** - A browser-based Linux virtual machine using v86 (x86 emulator compiled to WebAssembly) with Alpine Linux. Features a React UI with OPFS for persistent VM state storage.
@@ -112,3 +127,25 @@ console=ttyS0 root=host9p rootfstype=9p rootflags=trans=virtio,cache=loose rw in
 - **No serial output**: Verify kernel cmdline includes `console=ttyS0`
 - **SharedArrayBuffer errors**: Must use dev server, not `file://` protocol
 - **Slow boot**: Normal (~15s); use Save State for faster resume
+
+## Code Style
+
+- TypeScript with strict mode
+- Functional React components with hooks
+- Use existing utilities from `src/lib/` before adding new dependencies
+- Keep components small and focused
+- No `any` types without explicit justification
+
+## Testing & Validation
+
+After code changes, always run:
+```bash
+cd web && npx tsc --noEmit  # Type check
+npm run build               # Ensure production build works
+```
+
+## Git Workflow
+
+- Commit messages: imperative mood, concise (e.g., "Add VM state persistence")
+- One logical change per commit
+- Run type-check before committing
