@@ -36,7 +36,19 @@ cd alpine-guest
 
 # v86 setup (if rebuilding from source)
 ./scripts/setup-v86.sh
+
+# v86 Rust development
+cd v86
+/Users/drietsch/.cargo/bin/cargo check --lib  # Type check Rust code
+/Users/drietsch/.cargo/bin/cargo build --lib  # Build library
+make build/v86-debug.wasm                      # Build debug WASM
 ```
+
+## Build Tools Location
+
+- **Cargo/Rust**: `~/.cargo/bin/cargo` (linked to rustup)
+- **Rustup**: `~/.cargo/bin/rustup`
+- v86 uses Rust compiled to WebAssembly via wasm32-unknown-unknown target
 
 ## Architecture
 
@@ -143,6 +155,78 @@ After code changes, always run:
 cd web && npx tsc --noEmit  # Type check
 npm run build               # Ensure production build works
 ```
+
+## v86 64-bit Testing
+
+The v86 submodule includes a 64-bit test infrastructure for validating long mode implementation.
+
+### Running 64-bit Tests
+
+```bash
+cd v86
+
+# Run all 44 NASM64 tests (should pass)
+node tests/nasm64/run64.js
+
+# Regenerate golden master fixtures
+node tests/nasm64/gen_golden.js --force
+
+# Run specific test pattern
+TEST_NAME=rex node tests/nasm64/run64.js
+
+# Single worker mode for debugging
+MAX_PARALLEL_TESTS=1 node tests/nasm64/run64.js
+```
+
+### Key Technical Details
+
+**WASM Memory Layout for 64-bit Registers:**
+- 64-bit registers (RAX-R15) stored at WASM memory offset 1280
+- Each register is 8 bytes, index 0-15 (RAX=0, RCX=1, ..., R15=15)
+- RIP stored at offset 1408
+- Access via `DataView` on `cpu.wasm_memory.buffer`
+
+**cpu_exception_hook Behavior (DEBUG builds only):**
+- Return `false` → Exception delivered to guest IDT handler
+- Return `true` → Exception suppressed (NOT delivered to guest)
+- Default hook returns `undefined` (falsy = delivered)
+
+**Fixture Generation:**
+- QEMU's `-kernel` uses Linux boot protocol, NOT Multiboot
+- Use `gen_golden.js` to generate fixtures from v86 itself
+- Both `gen_golden.js` and `run64.js` must use identical settings (JIT disabled, same exception hook behavior)
+
+### Test Infrastructure Files
+
+| File | Purpose |
+|------|---------|
+| `tests/nasm64/run64.js` | Test runner comparing v86 against fixtures |
+| `tests/nasm64/gen_golden.js` | Generates fixtures using v86 execution |
+| `tests/nasm64/header64.inc` | Bootstrap into 64-bit long mode |
+| `tests/nasm64/header64_idt.inc` | Bootstrap with IDT for exception tests |
+| `tests/nasm64/footer64.inc` | Test completion (HLT) |
+
+### KVM Unit Tests
+
+Located at `v86/tests/kvm-unit-tests/`. These ARE x86_64 tests but require Linux GCC to build (flags like `-mno-red-zone` and `-no-pie` are incompatible with macOS clang).
+
+**Building KVM unit tests on macOS (via Docker):**
+
+```bash
+cd v86/tests/kvm-unit-tests
+./build-docker.sh   # Builds x86_64 tests using Docker
+```
+
+This creates a Docker container with Debian + GCC, runs `./configure --arch=x86_64`, and builds the tests. The compiled `.flat` binaries appear in `x86/`.
+
+**Note**: Some tests like `pae.c` are explicitly 32-bit only and will be skipped. The build produces 37 x86_64 test binaries.
+
+**Current Status**:
+- `realmode.flat` passes (many subtests completed)
+- 64-bit tests enter long mode but get stuck in `smp_init` (APIC/IPI handling)
+- The NASM64 tests (44/44 pass) are more reliable for 64-bit validation
+
+For quick macOS development without Docker, use the NASM64 tests which provide comprehensive 64-bit coverage.
 
 ## Git Workflow
 

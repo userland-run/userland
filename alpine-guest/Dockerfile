@@ -1,4 +1,4 @@
-FROM i386/alpine:3.21.0
+FROM amd64/alpine:3.21.0
 
 # Core system
 RUN apk add --no-cache \
@@ -19,5 +19,5 @@ RUN rc-update add devfs sysinit && \
     rc-update add modules boot && \
     rc-update add networking boot
 
-# Generate initramfs with 9p support
-RUN mkinitfs -F "virtio 9p" $(ls /lib/modules)
+# Generate initramfs with 9p support (base feature includes busybox)
+RUN mkinitfs -F "base virtio 9p" $(ls /lib/modules)

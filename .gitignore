@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+alpine-guest/
+web/public/alpine
 
 # Build outputs
 web/dist/

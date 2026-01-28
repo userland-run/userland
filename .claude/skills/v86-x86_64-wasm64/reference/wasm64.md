@@ -25,6 +25,15 @@ v86 uses WebAssembly for JIT-compiled guest code. Adding 64-bit guest support re
 | memory.grow arg | i32 (pages) | i64 (pages) |
 | Load/store offsets | i32 | i64 |
 
+### Binary Encoding (SPEC: memory64.md :: Binary format)
+
+```
+limits ::= 0x00 n:u32        ⇒ i32, {min n, max ϵ}    ;; memory32, no max
+        |  0x01 n:u32 m:u32  ⇒ i32, {min n, max m}    ;; memory32, with max
+        |  0x04 n:u64        ⇒ i64, {min n, max ϵ}    ;; memory64, no max
+        |  0x05 n:u64 m:u64  ⇒ i64, {min n, max m}    ;; memory64, with max
+```
+
 ### Memory declaration
 
 ```wat
@@ -209,14 +218,245 @@ const hasMemory64 = WebAssembly.validate(new Uint8Array([
 
 ---
 
-## Files to modify
+## Actual Implementation
+
+### wasm_builder.rs Changes
+
+**Added fields and methods**:
+```rust
+pub struct WasmBuilder {
+    // ... existing fields ...
+    use_memory64: bool,  // Enable memory64 mode
+}
+
+impl WasmBuilder {
+    pub fn set_memory64(&mut self, use_memory64: bool) {
+        self.use_memory64 = use_memory64;
+    }
+
+    pub fn use_memory64(&self) -> bool {
+        self.use_memory64
+    }
+}
+```
+
+**Memory import encoding**:
+```rust
+pub fn write_memory_import(&mut self) {
+    // ... existing code ...
+    if self.use_memory64 {
+        // SPEC: memory64.md :: Binary format -> 0x04 for i64 limits, no max
+        self.output.push(0x04);
+        write_leb_u64(&mut self.output, 64);  // min pages as u64
+    } else {
+        self.output.push(0);
+        write_leb_u32(&mut self.output, 64);
+    }
+}
+```
+
+**Memory64 load functions**:
+```rust
+/// Load i32 using 64-bit address constant
+pub fn load_fixed_i32_mem64(&mut self, addr: u64) {
+    self.const_i64(addr as i64);
+    self.load_aligned_i32_from_stack(0);
+}
+
+/// Load i64 using 64-bit address constant
+pub fn load_fixed_i64_mem64(&mut self, addr: u64) {
+    self.const_i64(addr as i64);
+    self.load_aligned_i64_from_stack(0);
+}
+
+/// Load u8 using 64-bit address constant
+pub fn load_fixed_u8_mem64(&mut self, addr: u64) {
+    self.const_i64(addr as i64);
+    self.load_u8_from_stack(0);
+}
+
+/// Load u16 using 64-bit address constant
+pub fn load_fixed_u16_mem64(&mut self, addr: u64) {
+    self.const_i64(addr as i64);
+    self.load_aligned_u16_from_stack(0);
+}
+```
+
+**New i64 operations**:
+```rust
+pub fn and_i64(&mut self) { self.instruction_body.push(op::OP_I64AND); }
+pub fn xor_i64(&mut self) { self.instruction_body.push(op::OP_I64XOR); }
+```
+
+### codegen.rs Changes
+
+**64-bit register access**:
+```rust
+/// Load 64-bit register value onto WASM stack as i64
+pub fn gen_get_reg64(ctx: &mut JitContext, r: u32) {
+    ctx.builder.load_fixed_i64(global_pointers::get_reg64_offset(r));
+}
+
+/// Store i64 from WASM stack to 64-bit register
+pub fn gen_set_reg64(ctx: &mut JitContext, r: u32) {
+    let value = ctx.builder.set_new_local_i64();
+    ctx.builder.const_i32(global_pointers::get_reg64_offset(r) as i32);
+    ctx.builder.get_local_i64(&value);
+    ctx.builder.store_aligned_i64(0);
+    ctx.builder.free_local_i64(value);
+}
+
+/// Load low 32 bits of 64-bit register as i32
+pub fn gen_get_reg64_low32(ctx: &mut JitContext, r: u32) {
+    ctx.builder.load_fixed_i32(global_pointers::get_reg64_offset(r) as u32);
+}
+
+/// Store i32 to low 32 bits of 64-bit register, zero-extending to 64 bits
+/// (per x86_64 semantics: writing to 32-bit reg clears upper 32 bits)
+pub fn gen_set_reg64_low32(ctx: &mut JitContext, r: u32) {
+    let value = ctx.builder.set_new_local();  // i32 local
+    // Zero-extend to i64 and store full 64-bit value
+    ctx.builder.const_i32(global_pointers::get_reg64_offset(r) as i32);
+    ctx.builder.get_local(&value);
+    ctx.builder.extend_unsigned_i32_to_i64();
+    ctx.builder.store_aligned_i64(0);
+    ctx.builder.free_local(value);
+}
+
+/// Load low 16 bits of 64-bit register as i32
+pub fn gen_get_reg64_low16(ctx: &mut JitContext, r: u32) {
+    ctx.builder.load_fixed_u16(global_pointers::get_reg64_offset(r) as u32);
+}
+
+/// Store i32 (low 16 bits) to low 16 bits of 64-bit register, preserving upper bits
+pub fn gen_set_reg64_low16(ctx: &mut JitContext, r: u32) {
+    let value = ctx.builder.set_new_local();
+    let offset = global_pointers::get_reg64_offset(r) as u32;
+    ctx.builder.const_i32(offset as i32);
+    ctx.builder.get_local(&value);
+    ctx.builder.store_aligned_u16(0);
+    ctx.builder.free_local(value);
+}
+```
+
+### modrm.rs Changes
+
+**64-bit address generation dispatch**:
+```rust
+pub fn gen(ctx: &mut JitContext, modrm_byte: ModrmByte, esp_offset: i32) {
+    // Route to 64-bit handler when in long mode with 64-bit addressing
+    if ctx.cpu.is_64() && !ctx.cpu.asize_32() {
+        gen_64(ctx, modrm_byte, esp_offset as i64);
+        return;
+    }
+    // ... existing 32-bit logic ...
+}
+```
+
+**64-bit effective address calculation**:
+```rust
+fn gen_64(ctx: &mut JitContext, modrm_byte: ModrmByte, rsp_offset: i64) {
+    // SPEC: intel-64bit-architecture.md :: Vol 1 Ch 3.7.5 -> 64-bit addressing
+    // Uses 64-bit registers, i64 arithmetic, sign-extends 32-bit displacements
+
+    fn gen_base_64(ctx: &mut JitContext, base: u32, rsp_offset: i64) {
+        codegen::gen_get_reg64(ctx, base);
+        if base == regs::RSP || base == regs::RBP {
+            if rsp_offset != 0 {
+                ctx.builder.const_i64(rsp_offset);
+                ctx.builder.add_i64();
+            }
+        }
+    }
+
+    fn gen_index_64(ctx: &mut JitContext, index: u32, scale: u8) {
+        codegen::gen_get_reg64(ctx, index);
+        if scale > 0 {
+            ctx.builder.const_i64(scale as i64);
+            ctx.builder.shl_i64();
+        }
+    }
+
+    // ... ModR/M decoding with 64-bit arithmetic ...
+    // Sign-extend 32-bit displacements to 64-bit
+    // Wrap final address to i32 for physical memory access (TLB is still 32-bit)
+    ctx.builder.wrap_i64_to_i32();
+}
+```
+
+### jit.rs and cpu.rs Changes
+
+**Removed 64-bit skip**:
+```rust
+// jit.rs::jit_analyze_and_generate() - REMOVED:
+// if state_flags.is_64() || unsafe { *global_pointers::is_64 } { return; }
+
+// jit.rs::jit_increase_hotness_and_maybe_compile() - REMOVED:
+// if state_flags.is_64() { return; }
+
+// cpu.rs - JIT execution now unconditional:
+// Before: if let Some((wasm_table_index, initial_state)) = jit_entry.filter(|_| !*is_64)
+// After:  if let Some((wasm_table_index, initial_state)) = jit_entry
+
+// Before: if !*is_64 { jit::jit_increase_hotness_and_maybe_compile(...); }
+// After:  jit::jit_increase_hotness_and_maybe_compile(...);
+```
+
+### cpu_context.rs Changes
+
+**Mode detection helpers**:
+```rust
+pub fn is_64(&self) -> bool { self.state_flags.is_64() }
+
+pub fn asize_32(&self) -> bool {
+    // SPEC: intel-64bit-architecture.md :: Vol 1 Ch 3.6.1 -> Address Size in 64-Bit Mode
+    // In 64-bit mode: default is 64-bit, 67h prefix makes it 32-bit
+    // In 32-bit/16-bit mode: standard XOR logic applies
+    if self.state_flags.is_64() {
+        self.prefixes & PREFIX_MASK_ADDRSIZE != 0
+    } else {
+        self.state_flags.is_32() != (self.prefixes & PREFIX_MASK_ADDRSIZE != 0)
+    }
+}
+```
+
+---
+
+## Files Modified (Summary)
 
 | File | Changes |
 |------|---------|
-| `v86/src/rust/wasmgen/wasm_builder.rs` | i64 memory ops, memory64 section |
-| `v86/src/rust/wasmgen/wasm_opcodes.rs` | i64 load/store opcodes |
-| `v86/src/rust/jit.rs` | Mode-aware codegen |
-| `v86/src/rust/jit_instructions.rs` | 64-bit instruction variants |
-| `v86/src/rust/cpu/memory.rs` | 64-bit address types |
-| `v86/src/rust/cpu/cpu.rs` | 64-bit register storage |
-| `v86/src/browser/starter.js` | memory64 feature detection |
+| `v86/src/rust/wasmgen/wasm_builder.rs` | `use_memory64` flag, memory64 limit encoding (0x04), `load_fixed_*_mem64()`, `and_i64()`, `xor_i64()` |
+| `v86/src/rust/codegen.rs` | `gen_get_reg64()`, `gen_set_reg64()`, `gen_*_reg64_low32/16()` |
+| `v86/src/rust/modrm.rs` | `gen_64()` for 64-bit EA with i64 arithmetic |
+| `v86/src/rust/cpu_context.rs` | `is_64()`, updated `asize_32()` for 64-bit mode |
+| `v86/src/rust/jit.rs` | Removed `is_64` early returns |
+| `v86/src/rust/cpu/cpu.rs` | Removed JIT disable filter for 64-bit mode |
+| `v86/src/rust/wasmgen/wasm_opcodes.rs` | i64 load/store opcodes (already present) |
+
+---
+
+## Remaining Work
+
+### jit_instructions.rs
+
+Wire up 64-bit register access for stack operations:
+```rust
+// Need to implement:
+gen_push64()  // Use gen_get_reg64(RSP), sub, gen_set_reg64(RSP), store 64-bit value
+gen_pop64()   // Load 64-bit value, gen_get_reg64(RSP), add, gen_set_reg64(RSP)
+gen_call64()  // Push 64-bit return address, update RIP
+gen_ret64()   // Pop 64-bit return address, jump
+```
+
+### Browser Feature Detection
+
+```javascript
+// Check for memory64 support
+const hasMemory64 = WebAssembly.validate(new Uint8Array([
+    0x00, 0x61, 0x73, 0x6d,  // magic
+    0x01, 0x00, 0x00, 0x00,  // version
+    0x05, 0x04, 0x01,        // memory section
+    0x04, 0x00, 0x01         // memory i64 0 1 (flag 0x04 = i64 limits)
+]));
+```

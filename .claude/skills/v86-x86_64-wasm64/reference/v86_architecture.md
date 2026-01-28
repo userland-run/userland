@@ -132,21 +132,88 @@ pub const ECX: i32 = 1;
 
 ### 6. Wasm Codegen (`src/rust/wasmgen/`)
 
-**Current**: Generates wasm32 code.
+**Current status**: Memory64 infrastructure implemented.
 
-**Changes needed**:
-- memory64 support (i64 addressing)
-- i64 operations for 64-bit arithmetic
-- Mode-aware code generation
+**Key additions**:
+```rust
+// wasm_builder.rs
+pub struct WasmBuilder {
+    use_memory64: bool,  // NEW: Enable memory64 mode
+}
+
+// Memory64 load functions (NEW)
+pub fn load_fixed_i32_mem64(&mut self, addr: u64);
+pub fn load_fixed_i64_mem64(&mut self, addr: u64);
+pub fn load_fixed_u8_mem64(&mut self, addr: u64);
+pub fn load_fixed_u16_mem64(&mut self, addr: u64);
+
+// i64 operations (NEW)
+pub fn and_i64(&mut self);
+pub fn xor_i64(&mut self);
+```
 
 ### 7. JIT (`src/rust/jit.rs`, `src/rust/jit_instructions.rs`)
 
-**Current**: JIT compiles hot basic blocks to Wasm.
+**Current status**: JIT enabled for 64-bit mode, falls back to interpreter when codegen incomplete.
 
-**Changes needed**:
-- Track CPU mode in JIT context
-- Generate 64-bit variants of instructions
-- Handle REX prefixes in JIT path
+**Changes made**:
+- Removed `is_64` skip in `jit_analyze_and_generate()` (~line 792)
+- Removed `is_64` skip in `jit_increase_hotness_and_maybe_compile()` (~line 2123)
+- JIT context tracks mode via `CpuContext::is_64()`
+
+**Remaining work**:
+- Wire up `gen_push64()`/`gen_pop64()` in jit_instructions.rs
+- Implement `gen_call64()`/`gen_ret64()` for 64-bit call/return
+- Update stack operations to use `gen_get_reg64(RSP)`/`gen_set_reg64(RSP)`
+
+### 8. CPU Context (`src/rust/cpu_context.rs`)
+
+**Key helpers for 64-bit mode**:
+```rust
+impl CpuContext {
+    pub fn is_64(&self) -> bool { self.state_flags.is_64() }
+
+    // Address size: 64-bit default in long mode, 67h -> 32-bit
+    pub fn asize_32(&self) -> bool {
+        if self.state_flags.is_64() {
+            self.prefixes & PREFIX_MASK_ADDRSIZE != 0
+        } else {
+            self.state_flags.is_32() != (self.prefixes & PREFIX_MASK_ADDRSIZE != 0)
+        }
+    }
+}
+```
+
+### 9. Codegen (`src/rust/codegen.rs`)
+
+**64-bit register access functions (NEW)**:
+```rust
+pub fn gen_get_reg64(ctx: &mut JitContext, r: u32);     // Load 64-bit reg as i64
+pub fn gen_set_reg64(ctx: &mut JitContext, r: u32);     // Store i64 to 64-bit reg
+pub fn gen_get_reg64_low32(ctx: &mut JitContext, r: u32); // Load low 32 bits
+pub fn gen_set_reg64_low32(ctx: &mut JitContext, r: u32); // Store low 32, zero-extend
+pub fn gen_get_reg64_low16(ctx: &mut JitContext, r: u32); // Load low 16 bits
+pub fn gen_set_reg64_low16(ctx: &mut JitContext, r: u32); // Store low 16, preserve upper
+```
+
+### 10. ModR/M Decoding (`src/rust/modrm.rs`)
+
+**64-bit address generation (NEW)**:
+```rust
+pub fn gen(ctx: &mut JitContext, modrm_byte: ModrmByte, esp_offset: i32) {
+    if ctx.cpu.is_64() && !ctx.cpu.asize_32() {
+        gen_64(ctx, modrm_byte, esp_offset as i64);
+        return;
+    }
+    // ... existing 32-bit logic
+}
+
+fn gen_64(ctx: &mut JitContext, modrm_byte: ModrmByte, rsp_offset: i64) {
+    // Uses i64 arithmetic for 64-bit effective addresses
+    // Sign-extends 32-bit displacements
+    // Wraps to i32 for physical memory access
+}
+```
 
 ---
 
@@ -205,21 +272,30 @@ Guest Code → Fetch → Decode → Execute → Memory/IO → State Update
 
 ## Files requiring changes for 64-bit support
 
-| Priority | File | Description |
-|----------|------|-------------|
-| **P0** | `cpu/cpu.rs` | CPU state, EFER, mode tracking |
-| **P0** | `regs.rs` | Register constants for R8-R15 |
-| **P0** | `cpu/instructions.rs` | REX prefix, 64-bit ops |
-| **P0** | `cpu/modrm.rs` | 64-bit EA, RIP-relative |
-| **P1** | `paging.rs` | 4-level paging |
-| **P1** | `page.rs` | 64-bit PTE structure |
-| **P1** | `cpu/memory.rs` | 64-bit addresses |
-| **P1** | `cpu/misc_instr.rs` | SYSCALL/SYSRET, MSRs |
-| **P2** | `wasmgen/wasm_builder.rs` | memory64 output |
-| **P2** | `jit.rs` | Mode-aware JIT |
-| **P2** | `jit_instructions.rs` | 64-bit JIT handlers |
-| **P3** | `prefix.rs` | REX prefix integration |
-| **P3** | `state_flags.rs` | 64-bit state flags |
+| Priority | File | Status | Description |
+|----------|------|--------|-------------|
+| **P0** | `cpu/cpu.rs` | ✅ Done | CPU state, EFER, mode tracking, JIT enable |
+| **P0** | `regs.rs` | ✅ Done | Register constants for R8-R15 |
+| **P0** | `cpu/instructions.rs` | ✅ Done | REX prefix, 64-bit ops |
+| **P0** | `cpu/modrm.rs` | ✅ Done | 64-bit EA (interpreter) |
+| **P0** | `modrm.rs` (JIT) | ✅ Done | 64-bit EA via `gen_64()` |
+| **P1** | `paging.rs` | ✅ Done | 4-level paging |
+| **P1** | `page.rs` | ✅ Done | 64-bit PTE structure |
+| **P1** | `cpu/memory.rs` | ✅ Done | 64-bit addresses |
+| **P1** | `cpu/misc_instr.rs` | ✅ Done | SYSCALL/SYSRET, MSRs |
+| **P2** | `wasmgen/wasm_builder.rs` | ✅ Done | memory64 flag, i64 load functions |
+| **P2** | `codegen.rs` | ✅ Done | `gen_*_reg64()` functions |
+| **P2** | `jit.rs` | ✅ Done | Removed 64-bit skip |
+| **P2** | `jit_instructions.rs` | 🔄 Pending | 64-bit push/pop/call/ret |
+| **P2** | `cpu_context.rs` | ✅ Done | `is_64()`, `asize_32()` helpers |
+| **P3** | `prefix.rs` | ✅ Done | REX prefix integration |
+| **P3** | `state_flags.rs` | ✅ Done | 64-bit state flags |
+
+### Current Blocking Issue
+
+**IDT initialization in 64-bit mode**: When the kernel enters 64-bit mode and triggers first page fault, the IDT isn't initialized (`idtr_size=0`). This is a boot sequence issue, not a JIT issue.
+
+SPEC: intel-64bit-architecture.md :: Vol 3A Ch 6.14.1 -> 64-bit IDT gate descriptors are 16 bytes (vs 8 bytes in 32-bit)
 
 ---
 
@@ -230,9 +306,41 @@ Guest Code → Fetch → Decode → Execute → Memory/IO → State Update
 - `tests/api/`: API tests
 - `tests/full/`: Full boot tests
 
-### Needed for 64-bit
-- 64-bit assembly microtests (REX, RIP-relative, etc.)
-- Long mode entry tests
-- 4-level paging tests
-- SYSCALL/SYSRET tests
-- 64-bit Linux boot test
+### 64-bit Test Setup
+
+**Alpine Linux x86_64 kernel** (in `web/public/alpine/`):
+```
+vmlinuz-virt      - 64-bit kernel (6.12.65-0-virt)
+initramfs-virt    - Initramfs with 9p + virtio modules
+alpine-rootfs-flat/ - 9p filesystem
+```
+
+**Test runner** (custom, in web/ or tests/):
+```javascript
+// Boot with 64-bit kernel
+const emulator = new V86({
+    wasm_path: "v86.wasm",
+    memory_size: 512 * 1024 * 1024,
+    vga_memory_size: 8 * 1024 * 1024,
+    bzimage: { url: "/alpine/vmlinuz-virt" },
+    initrd: { url: "/alpine/initramfs-virt" },
+    cmdline: "console=ttyS0 root=host9p rootfstype=9p rootflags=trans=virtio,cache=loose rw",
+});
+```
+
+### Current 64-bit Boot Sequence
+
+1. ✅ Kernel decompression (32-bit protected mode)
+2. ✅ Long mode entry (sets EFER.LME, CR4.PAE, CR0.PG)
+3. ✅ 4-level paging initialization
+4. ❌ **BLOCKED**: First page fault with IDT not initialized
+   - `idtr_size=0` when exception occurs
+   - Need to trace kernel IDT setup
+
+### Needed for full 64-bit support
+- [x] 64-bit assembly microtests (REX, RIP-relative, etc.)
+- [x] Long mode entry tests
+- [x] 4-level paging tests
+- [ ] 64-bit IDT gate descriptor tests
+- [ ] SYSCALL/SYSRET tests
+- [ ] 64-bit Linux full boot test

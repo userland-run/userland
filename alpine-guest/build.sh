@@ -4,11 +4,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "==> Building Alpine i386 rootfs for v86"
+echo "==> Building Alpine x86_64 rootfs for v86"
 
-# Build Alpine i386 rootfs using Docker
+# Build Alpine x86_64 rootfs using Docker
 echo "==> Building Docker image..."
-docker build --platform linux/386 -t alpine-v86 .
+docker build --platform linux/amd64 -t alpine-v86 .
 
 echo "==> Exporting rootfs..."
 docker create --name alpine-v86-container alpine-v86 || true
