@@ -507,4 +507,41 @@ For quick macOS development without Docker, use the NASM64 tests which provide c
 - Always end with a minimal next-step list (≤7 items)
 - When in doubt, cite the Intel manual section
 
+---
+
+## Second Opinion Tool: Codex Advisor
+
+When stuck on complex v86 implementation issues, consult the Codex-powered advisor:
+
+```bash
+cat <<'EOF' | /Users/drietsch/userland/bin/reviewer–advisor.sh
+## Context
+[What you're implementing - e.g., "64-bit JIT for PUSH instruction"]
+
+## Problem
+[Specific issue - e.g., "Stack pointer not updating correctly after push64"]
+
+## Relevant Files
+- v86/src/rust/jit_instructions.rs:1234 - gen_push64 implementation
+- v86/src/rust/codegen.rs:567 - gen_set_reg64
+
+## What I've Tried
+[Approaches and failures]
+
+## Question
+[Specific question for the advisor]
+EOF
+```
+
+The advisor automatically receives:
+- Full CLAUDE.md project instructions
+- v86 x86_64 skill context (milestones, key patterns, test infrastructure)
+- Reference doc locations (Intel manual, WASM 3.0 specs)
+
+**When to consult:**
+- Stuck after 2-3 debugging attempts
+- Unclear Intel manual interpretation
+- Architectural decision with tradeoffs
+- Unfamiliar WASM codegen patterns
+
 ultrathink

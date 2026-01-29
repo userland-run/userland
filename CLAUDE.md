@@ -17,6 +17,33 @@ Work autonomously on tasks without asking for permission at each step. When give
 - When unsure between approaches, pick one and proceed (can iterate later)
 - Use `ultrathink` for complex architectural decisions
 
+### Second Opinion Tool: Codex Advisor
+
+You have access to a technical advisor powered by Codex via `bin/reviewer–advisor.sh`. Consult it when:
+- Stuck on a bug after 2-3 attempts
+- Facing architectural decisions with unclear tradeoffs
+- Debugging complex issues where root cause isn't obvious
+- Implementing unfamiliar patterns or technologies
+
+**Usage:**
+```bash
+cat <<'EOF' | /Users/drietsch/userland/bin/reviewer–advisor.sh
+## Context
+[Brief description of what you're working on]
+
+## Problem
+[Specific issue you're facing]
+
+## What I've Tried
+[Approaches attempted and why they failed]
+
+## Question
+[Specific question(s) for the advisor]
+EOF
+```
+
+The advisor automatically receives project context (CLAUDE.md) and v86 skill knowledge. The user can also explicitly request: "Ask the advisor about this"
+
 ## Project Overview
 
 **Userland** - A browser-based Linux virtual machine using v86 (x86 emulator compiled to WebAssembly) with Alpine Linux. Features a React UI with OPFS for persistent VM state storage.
